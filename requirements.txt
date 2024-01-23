@@ -1,5 +1,6 @@
 streamlit>=1.17.1
 torch>=1.9.0
+transformers
 datasets
 huggingface-hub>=0.19
 hf-transfer>=0.1.4
