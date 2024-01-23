@@ -1,40 +1,51 @@
-import altair as alt
-import numpy as np
-import pandas as pd
 import streamlit as st
+import subprocess  # Added import statement
+from transformers import BertTokenizer, BertForTokenClassification
+import torch
+import spacy
+from spacy import displacy
 
-"""
-# Welcome to Streamlit!
+def install_requirements():
+    subprocess.run(["pip", "install", "-r", "requirements.txt"])
 
-Edit `/streamlit_app.py` to customize this app to your heart's desire :heart:.
-If you have any questions, checkout our [documentation](https://docs.streamlit.io) and [community
-forums](https://discuss.streamlit.io).
+def recognize_entities(text_input):
+    model_name = "dslim/bert-base-NER"
+    model = BertForTokenClassification.from_pretrained(model_name)
+    tokenizer = BertTokenizer.from_pretrained(model_name)
 
-In the meantime, below is an example of what you can do with just a few lines of code:
-"""
+    inputs = tokenizer(text_input, return_tensors="pt", truncation=True)
+    outputs = model(**inputs)
+    predictions = torch.argmax(outputs.logits, dim=2)
 
-num_points = st.slider("Number of points in spiral", 1, 10000, 1100)
-num_turns = st.slider("Number of turns in spiral", 1, 300, 31)
+    entities = []
+    for i, token in enumerate(tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])):
+        if predictions[0][i].item() != 0:  # Ignore 'O' (Outside) tokens
+            entities.append((token, model.config.id2label[predictions[0][i].item()]))
 
-indices = np.linspace(0, 1, num_points)
-theta = 2 * np.pi * num_turns * indices
-radius = indices
+    return entities
 
-x = radius * np.cos(theta)
-y = radius * np.sin(theta)
+def main():
+    st.title("BERT-based Named Entity Recognition (NER) App")
 
-df = pd.DataFrame({
-    "x": x,
-    "y": y,
-    "idx": indices,
-    "rand": np.random.randn(num_points),
-})
+    text_input = st.text_area("Enter a sentence:")
 
-st.altair_chart(alt.Chart(df, height=700, width=700)
-    .mark_point(filled=True)
-    .encode(
-        x=alt.X("x", axis=None),
-        y=alt.Y("y", axis=None),
-        color=alt.Color("idx", legend=None, scale=alt.Scale()),
-        size=alt.Size("rand", legend=None, scale=alt.Scale(range=[1, 150])),
-    ))
+    if st.button("Recognize Entities"):
+        entities = recognize_entities(text_input)
+
+        # Create a spacy Doc for visualization
+        nlp = spacy.load("en_core_web_sm")
+        doc = nlp(text_input)
+        
+        # Highlight recognized entities
+        for ent in entities:
+            token_start = text_input.find(ent[0])
+            token_end = token_start + len(ent[0])
+            doc.ents += (spacy.tokens.Span(doc, token_start, token_end, label=ent[1]),)
+        
+        # Display the sentence with entity highlighting
+        html_output = displacy.render(doc, style="ent", page=True)
+        st.write(html_output, unsafe_allow_html=True)
+
+if __name__ == "__main__":
+    install_requirements()  # Call install_requirements before running the Streamlit app
+    main()
